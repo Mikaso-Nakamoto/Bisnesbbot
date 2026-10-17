@@ -1,0 +1,17 @@
+[Unit]
+Description=Bisnesbbot Telegram booking bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_LINUX_USER
+WorkingDirectory=/opt/bisnesbbot
+EnvironmentFile=/opt/bisnesbbot/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/bisnesbbot/.venv/bin/bisnesbbot
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
