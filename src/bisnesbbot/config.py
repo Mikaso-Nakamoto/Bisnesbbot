@@ -93,10 +93,30 @@ def parse_weekly_schedule(raw: str | None) -> WeeklySchedule:
     return parsed
 
 
+def _parse_id_list(raw: str, *, name: str) -> frozenset[int]:
+    values: set[int] = set()
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            value = int(item)
+        except ValueError as exc:
+            raise ValueError(f"Неверный ID в {name}: {item!r}") from exc
+        if value <= 0:
+            raise ValueError(f"ID в {name} должны быть положительными числами")
+        values.add(value)
+    return frozenset(values)
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
-    bot_token: str
+    bot_token: str | None
     admin_telegram_ids: frozenset[int]
+    vk_group_token: str | None
+    vk_group_id: int | None
+    vk_api_version: str
+    admin_vk_user_ids: frozenset[int]
     db_path: Path
     timezone: ZoneInfo
     service_name: str
@@ -105,26 +125,49 @@ class Settings:
     booking_days_ahead: int
     weekly_schedule: WeeklySchedule
     demo_mode: bool
+    max_bot_token: str | None = None
+    max_admin_user_ids: frozenset[int] = frozenset()
 
 
 def load_settings() -> Settings:
     load_dotenv()
 
-    bot_token = os.getenv("BOT_TOKEN", "").strip()
-    if not bot_token:
+    bot_token = os.getenv("BOT_TOKEN", "").strip() or None
+    vk_group_token = os.getenv("VK_GROUP_TOKEN", "").strip() or None
+    vk_group_id_raw = os.getenv("VK_GROUP_ID", "").strip()
+    vk_group_id: int | None = None
+    if vk_group_id_raw:
+        try:
+            vk_group_id = int(vk_group_id_raw)
+        except ValueError as exc:
+            raise ValueError("VK_GROUP_ID должен быть числовым ID сообщества") from exc
+        if vk_group_id <= 0:
+            raise ValueError("VK_GROUP_ID должен быть положительным числом")
+
+    if bool(vk_group_token) != bool(vk_group_id):
+        raise ValueError("Задайте вместе VK_GROUP_TOKEN и VK_GROUP_ID")
+    if not bot_token and not vk_group_token:
         raise ValueError(
-            "Не задан BOT_TOKEN. Скопируйте .env.example в .env и добавьте токен бота."
+            "Настройте хотя бы один канал: BOT_TOKEN для Telegram или "
+            "VK_GROUP_TOKEN вместе с VK_GROUP_ID для VK."
         )
 
-    admin_ids: set[int] = set()
-    for item in os.getenv("ADMIN_TELEGRAM_IDS", "").split(","):
-        item = item.strip()
-        if not item:
-            continue
-        try:
-            admin_ids.add(int(item))
-        except ValueError as exc:
-            raise ValueError(f"Неверный ID в ADMIN_TELEGRAM_IDS: {item!r}") from exc
+    admin_telegram_ids = _parse_id_list(
+        os.getenv("ADMIN_TELEGRAM_IDS", ""), name="ADMIN_TELEGRAM_IDS"
+    )
+    admin_vk_user_ids = _parse_id_list(
+        os.getenv("VK_ADMIN_USER_IDS", ""), name="VK_ADMIN_USER_IDS"
+    )
+    max_bot_token = os.getenv("MAX_BOT_TOKEN", "").strip() or None
+    max_admin_user_ids = _parse_id_list(
+        os.getenv("MAX_ADMIN_USER_IDS", ""), name="MAX_ADMIN_USER_IDS"
+    )
+    if admin_telegram_ids and not bot_token:
+        raise ValueError("ADMIN_TELEGRAM_IDS указан, но BOT_TOKEN не настроен")
+    if admin_vk_user_ids and not vk_group_token:
+        raise ValueError("VK_ADMIN_USER_IDS указан, но VK-бот не настроен")
+    if max_admin_user_ids and not max_bot_token:
+        raise ValueError("MAX_ADMIN_USER_IDS указан, но MAX_BOT_TOKEN не настроен")
 
     timezone_name = os.getenv("TIMEZONE", "Europe/Moscow").strip()
     try:
@@ -152,10 +195,15 @@ def load_settings() -> Settings:
 
     demo_mode = _parse_bool(os.getenv("DEMO_MODE", "true"), name="DEMO_MODE")
     db_path = Path(os.getenv("DB_PATH", "data/bisnesbbot.sqlite3")).expanduser()
+    vk_api_version = os.getenv("VK_API_VERSION", "5.199").strip() or "5.199"
 
     return Settings(
         bot_token=bot_token,
-        admin_telegram_ids=frozenset(admin_ids),
+        admin_telegram_ids=admin_telegram_ids,
+        vk_group_token=vk_group_token,
+        vk_group_id=vk_group_id,
+        vk_api_version=vk_api_version,
+        admin_vk_user_ids=admin_vk_user_ids,
         db_path=db_path,
         timezone=tz,
         service_name=os.getenv("SERVICE_NAME", "Массаж").strip() or "Массаж",
@@ -164,4 +212,6 @@ def load_settings() -> Settings:
         booking_days_ahead=days_ahead,
         weekly_schedule=parse_weekly_schedule(os.getenv("WEEKLY_SCHEDULE_JSON")),
         demo_mode=demo_mode,
+        max_bot_token=max_bot_token,
+        max_admin_user_ids=max_admin_user_ids,
     )

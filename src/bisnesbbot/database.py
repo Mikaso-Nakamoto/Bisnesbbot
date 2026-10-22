@@ -14,6 +14,8 @@ class SlotUnavailableError(Exception):
 class Appointment:
     id: int
     client_name: str
+    contact_method: str
+    contact_value: str
     service_name: str
     start_ts: int
     end_ts: int
@@ -50,6 +52,8 @@ class AppointmentRepository:
                 CREATE TABLE IF NOT EXISTS appointments (
                     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                     client_name         TEXT NOT NULL,
+                    contact_method      TEXT NOT NULL DEFAULT '',
+                    contact_value       TEXT NOT NULL DEFAULT '',
                     service_name        TEXT NOT NULL,
                     start_ts            INTEGER NOT NULL,
                     end_ts              INTEGER NOT NULL,
@@ -71,6 +75,20 @@ class AppointmentRepository:
                     ON appointments(source_channel, external_user_id, created_at);
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(appointments)")
+            }
+            if "contact_method" not in columns:
+                connection.execute(
+                    "ALTER TABLE appointments ADD COLUMN "
+                    "contact_method TEXT NOT NULL DEFAULT ''"
+                )
+            if "contact_value" not in columns:
+                connection.execute(
+                    "ALTER TABLE appointments ADD COLUMN "
+                    "contact_value TEXT NOT NULL DEFAULT ''"
+                )
         finally:
             connection.close()
 
@@ -81,6 +99,8 @@ class AppointmentRepository:
         return Appointment(
             id=int(row["id"]),
             client_name=str(row["client_name"]),
+            contact_method=str(row["contact_method"]),
+            contact_value=str(row["contact_value"]),
             service_name=str(row["service_name"]),
             start_ts=int(row["start_ts"]),
             end_ts=int(row["end_ts"]),
@@ -100,6 +120,8 @@ class AppointmentRepository:
         self,
         *,
         client_name: str,
+        contact_method: str,
+        contact_value: str,
         service_name: str,
         start_ts: int,
         end_ts: int,
@@ -111,6 +133,10 @@ class AppointmentRepository:
     ) -> Appointment:
         if start_ts >= end_ts:
             raise ValueError("Время начала записи должно быть раньше времени окончания")
+        contact_method = contact_method.strip()
+        contact_value = " ".join(contact_value.split())
+        if not contact_method or not contact_value:
+            raise ValueError("Для предварительной заявки нужно указать контакт")
         if buffer_seconds < 0:
             raise ValueError("buffer_seconds не может быть отрицательным")
 
@@ -133,19 +159,21 @@ class AppointmentRepository:
             if conflict:
                 connection.rollback()
                 raise SlotUnavailableError(
-                    "Этот слот уже занят или ожидает подтверждения"
+                    "Этот слот уже занят или ожидает личного согласования"
                 )
 
             cursor = connection.execute(
                 """
                 INSERT INTO appointments (
-                    client_name, service_name, start_ts, end_ts, status,
-                    source_channel, external_user_id, external_chat_id,
-                    client_username, created_at
-                ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+                    client_name, contact_method, contact_value, service_name,
+                    start_ts, end_ts, status, source_channel, external_user_id,
+                    external_chat_id, client_username, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
                 """,
                 (
                     client_name,
+                    contact_method,
+                    contact_value,
                     service_name,
                     start_ts,
                     end_ts,

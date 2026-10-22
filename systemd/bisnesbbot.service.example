@@ -1,5 +1,5 @@
 [Unit]
-Description=Bisnesbbot Telegram booking bot
+Description=Bisnesbbot VK/Telegram booking with MAX notifications
 After=network-online.target
 Wants=network-online.target
 

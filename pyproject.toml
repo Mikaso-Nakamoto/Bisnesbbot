@@ -5,11 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bisnesbbot"
 version = "0.1.0"
-description = "Система записи на массаж: Telegram-бот и SQLite"
+description = "VK-first система записи на массаж с Telegram, MAX-уведомлениями и общей SQLite-базой"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "aiogram>=3.31,<4",
+    "aiohttp>=3.9,<4",
     "python-dotenv>=1.2,<2",
 ]
 
